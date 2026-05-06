@@ -18,7 +18,7 @@ pub fn prepare_statement(input: &str) -> Result<Statement, &str> {
                     if email.len() > EMAIL_SIZE {
                         return Err("Email size exceeds limit");
                     }
-                    let id = match id_str.parse::<i32>() {
+                    let id = match id_str.parse::<u32>() {
                         Ok(id_int) => id_int,
                         Err(_) => return Err("ID must be an integer"),
                     };

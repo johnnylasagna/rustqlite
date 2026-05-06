@@ -15,13 +15,13 @@ pub const TABLE_MAX_ROWS: usize = ROWS_PER_PAGE * TABLE_MAX_PAGES;
 
 /// Row
 pub struct Row {
-    pub id: i32,
+    pub id: u32,
     pub username: [u8; 32],
     pub email: [u8; 255],
 }
 
 impl Row {
-    pub fn new(id: i32, username: &str, email: &str) -> Row {
+    pub fn new(id: u32, username: &str, email: &str) -> Row {
         let mut username_buffer = [0; USERNAME_SIZE];
         username_buffer[..username.len()].copy_from_slice(username.as_bytes());
 
@@ -52,7 +52,7 @@ impl Row {
         email.copy_from_slice(&buffer[EMAIL_OFFSET..EMAIL_OFFSET + EMAIL_SIZE]);
 
         Row {
-            id: i32::from_le_bytes(id),
+            id: u32::from_le_bytes(id),
             username,
             email,
         }
