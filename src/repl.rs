@@ -1,3 +1,4 @@
+use crate::storage::Table;
 use std::io::{self, Write};
 
 /// Input Buffer
@@ -16,7 +17,7 @@ impl InputBuffer {
     }
 
     pub fn get_buffer(&self) -> &str {
-        &self.buffer.trim()
+        self.buffer.trim()
     }
 }
 
@@ -38,8 +39,13 @@ pub fn parse_meta_command(input: &str) -> Result<MetaCommand, ()> {
     }
 }
 
-pub fn execute_meta_command(command: &MetaCommand) {
+pub fn execute_meta_command(command: &MetaCommand, table: &mut Table) {
     match command {
-        MetaCommand::Exit => std::process::exit(0),
+        MetaCommand::Exit => {
+            if let Err(e) = table.close() {
+                println!("Error closing table: {}", e);
+            }
+            std::process::exit(0)
+        }
     }
 }

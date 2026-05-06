@@ -20,7 +20,7 @@ pub fn prepare_statement(input: &str) -> Result<Statement, &str> {
                     }
                     let id = match id_str.parse::<u32>() {
                         Ok(id_int) => id_int,
-                        Err(_) => return Err("ID must be an integer"),
+                        Err(_) => return Err("ID must be a positive integer"),
                     };
                     let row = Row::new(id, username, email);
                     return Ok(Statement::Insert(row));
@@ -49,9 +49,7 @@ fn execute_insert(statement: &Statement, table: &mut Table) -> Result<&'static s
     }
 
     if let Statement::Insert(row) = statement {
-        let slot = table
-            .row_slot_write(table.num_rows)
-            .expect("Failed to write to slot");
+        let slot = table.row_slot(table.num_rows)?;
         row.serialize(slot);
         table.num_rows += 1;
     }
@@ -59,9 +57,9 @@ fn execute_insert(statement: &Statement, table: &mut Table) -> Result<&'static s
     Ok("Insert statement executed")
 }
 
-fn execute_select(table: &Table) -> Result<&'static str, &'static str> {
+fn execute_select(table: &mut Table) -> Result<&'static str, &'static str> {
     for i in 0..table.num_rows {
-        let slot = table.row_slot_read(i).expect("Failed to open slot");
+        let slot = table.row_slot(i)?;
         let row = Row::deserialize(slot);
 
         let username_str = String::from_utf8_lossy(&row.username);

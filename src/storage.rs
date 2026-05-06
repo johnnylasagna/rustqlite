@@ -1,3 +1,6 @@
+use std::fs::{File, OpenOptions};
+use std::io::{Read, Seek, SeekFrom, Write};
+
 // Constants
 pub const ID_SIZE: usize = 4;
 pub const USERNAME_SIZE: usize = 32;
@@ -62,42 +65,127 @@ impl Row {
 /// Table
 pub struct Table {
     pub num_rows: usize,
-    pages: [Option<Box<[u8; PAGE_SIZE]>>; TABLE_MAX_PAGES],
+    pager: Pager,
 }
 
 impl Table {
-    pub fn new() -> Table {
+    pub fn new(filename: &str) -> Table {
+        let pager = Pager::new(filename);
+        let num_rows = pager.file_size / ROW_SIZE;
+        Table { num_rows, pager }
+    }
+
+    pub fn row_slot(&mut self, row_num: usize) -> Result<&mut [u8], &'static str> {
+        let page_num = row_num / ROWS_PER_PAGE;
+        let row_offset = row_num % ROWS_PER_PAGE;
+        let byte_offset = row_offset * ROW_SIZE;
+
+        let page = self.pager.get_page(page_num)?;
+        Ok(&mut page[byte_offset..byte_offset + ROW_SIZE])
+    }
+
+    pub fn close(&mut self) -> Result<(), &'static str> {
+        let num_full_pages = self.num_rows / ROWS_PER_PAGE;
+
+        for i in 0..num_full_pages {
+            if self.pager.pages[i].is_some() {
+                self.pager.flush(i, PAGE_SIZE)?;
+            }
+        }
+
+        let num_additional_rows = self.num_rows % ROWS_PER_PAGE;
+        if num_additional_rows > 0 {
+            let page_num = num_full_pages;
+            if self.pager.pages[page_num].is_some() {
+                self.pager.flush(page_num, num_additional_rows * ROW_SIZE)?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Pager
+pub struct Pager {
+    file: File,
+    pub file_size: usize,
+    pages: [Option<Box<[u8; PAGE_SIZE]>>; TABLE_MAX_PAGES],
+}
+
+impl Pager {
+    pub fn new(filename: &str) -> Pager {
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(filename)
+            .expect("Database file could not be opened");
+
+        let file_size = file
+            .metadata()
+            .expect("File metadata could not be accessed")
+            .len() as usize;
+
         const EMPTY_PAGE: Option<Box<[u8; PAGE_SIZE]>> = None;
-        Table {
-            num_rows: 0,
+
+        Pager {
+            file,
+            file_size,
             pages: [EMPTY_PAGE; TABLE_MAX_PAGES],
         }
     }
-    pub fn row_slot_write(&mut self, row_num: usize) -> Result<&mut [u8], &str> {
-        let page_num = row_num / ROWS_PER_PAGE;
 
-        if self.pages[page_num].is_none() {
-            self.pages[page_num] = Some(Box::new([0; PAGE_SIZE]));
+    pub fn get_page(&mut self, page_num: usize) -> Result<&mut [u8], &'static str> {
+        if page_num >= TABLE_MAX_PAGES {
+            return Err("Tried to access page out of bounds");
         }
 
-        let row_offset = row_num % ROWS_PER_PAGE;
-        let byte_offset = row_offset * ROW_SIZE;
+        if self.pages[page_num].is_none() {
+            let mut page = Box::new([0; PAGE_SIZE]);
+
+            let mut num_pages = self.file_size / PAGE_SIZE;
+            if self.file_size % PAGE_SIZE > 0 {
+                num_pages += 1;
+            }
+
+            if page_num < num_pages {
+                let bytes_to_read = if page_num == num_pages - 1 && self.file_size % PAGE_SIZE > 0 {
+                    self.file_size % PAGE_SIZE
+                } else {
+                    PAGE_SIZE
+                };
+
+                self.file
+                    .seek(SeekFrom::Start((page_num * PAGE_SIZE) as u64))
+                    .map_err(|_| "Failed to seek file")?;
+                self.file
+                    .read_exact(&mut page[..bytes_to_read])
+                    .map_err(|_| "Failed to read file")?;
+            }
+
+            self.pages[page_num] = Some(page);
+        }
+
         if let Some(page) = self.pages[page_num].as_mut() {
-            return Ok(&mut page[byte_offset..byte_offset + ROW_SIZE]);
+            Ok(page.as_mut_slice())
         } else {
-            return Err("Page not allocated");
+            Err("Page is empty")
         }
     }
 
-    pub fn row_slot_read(&self, row_num: usize) -> Result<&[u8], &str> {
-        let page_num = row_num / ROWS_PER_PAGE;
-        let row_offset = row_num % ROWS_PER_PAGE;
-        let byte_offset = row_offset * ROW_SIZE;
+    pub fn flush(&mut self, page_num: usize, size: usize) -> Result<(), &'static str> {
+        if let Some(page) = &self.pages[page_num] {
+            self.file
+                .seek(SeekFrom::Start((page_num * PAGE_SIZE) as u64))
+                .map_err(|_| "Failed to seek file")?;
+            
+            self.file
+                .write_all(&page[..size])
+                .map_err(|_| "Failed to write to file")?;
 
-        if let Some(page) = self.pages[page_num].as_ref() {
-            return Ok(&page[byte_offset..byte_offset + ROW_SIZE]);
+            Ok(())
         } else {
-            return Err("Page not allocated");
+            Err("Tried to flush null page")
         }
     }
 }

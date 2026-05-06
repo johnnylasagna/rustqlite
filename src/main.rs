@@ -1,3 +1,5 @@
+use std::env;
+
 mod repl;
 mod statement;
 mod storage;
@@ -8,7 +10,16 @@ use statement::{execute_statement, prepare_statement};
 use storage::Table;
 
 fn main() {
-    let mut table = Table::new();
+    let args: Vec<String> = env::args().collect();
+
+    if args.len() < 2 {
+        println!("Must supply database file name as argument");
+        std::process::exit(1);
+    }
+
+    let filename = &args[1];
+
+    let mut table = Table::new(filename);
     let mut input_buffer = InputBuffer::default();
 
     loop {
@@ -19,7 +30,7 @@ fn main() {
         if input.starts_with('.') {
             match parse_meta_command(input) {
                 Ok(command) => {
-                    execute_meta_command(&command);
+                    execute_meta_command(&command, &mut table);
                     continue;
                 }
                 Err(_) => {
