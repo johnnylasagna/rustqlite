@@ -1,22 +1,12 @@
-use std::{
-    io::{self, Write},
-    process::exit,
-};
+use std::{io::{self, Write}, process::Command};
 
-// Input buffer is managed as a struct
+/// Input Buffer
+#[derive(Default)]
 struct InputBuffer {
     buffer: String,
 }
 
 impl InputBuffer {
-    fn new() -> InputBuffer {
-        InputBuffer {
-            buffer: String::new(),
-        }
-    }
-
-    // If we don't add clear, the new input will be appended
-    // to the old one
     fn read_input(&mut self) {
         self.buffer.clear();
 
@@ -25,126 +15,85 @@ impl InputBuffer {
             .expect("Failed to Read");
     }
 
-    // Adding trim removes the newline character
     fn get_buffer(&self) -> &str {
         &self.buffer.trim()
     }
 }
 
-// print! does not automatically flush out the stream unlike
-// println! so we have to manually flush out the stream
+// Prompt
 fn print_prompt() {
     print!("db > ");
     io::stdout().flush().unwrap();
 }
 
-// We handle meta commands, ie. commands starting with '.'
-// and statements in different enums
-enum MetaCommandResult {
-    MetaCommandSuccess,
-    MetaCommandUnrecognizedCommands,
+/// Commands
+enum MetaCommand {
+    Exit,
 }
 
-enum PrepareResult {
-    PrepareSuccess,
-    PrepareUnrecognizedStatement,
-}
-
-// Enums for statement execution
-// Derive copy clone is needed to return statement type
-// From Statement struct
-#[derive(Copy, Clone)]
-enum StatementType {
-    StatementInsert,
-    StatementSelect,
-    StatementNone,
-}
-
-struct Statement {
-    statement_type: StatementType,
-}
-
-impl Statement {
-    fn new() -> Statement {
-        Statement {
-            statement_type: StatementType::StatementNone,
-        }
-    }
-    fn set_statement_type(&mut self, statement_type: StatementType) {
-        self.statement_type = statement_type;
-    }
-    fn get_statement_type(&self) -> StatementType {
-        self.statement_type
+fn parse_meta_command(input: &str) -> Result<MetaCommand, ()> {
+    match input {
+        ".exit" => Ok(MetaCommand::Exit),
+        _ => Err(()),
     }
 }
 
-fn do_meta_command(input_buffer: &InputBuffer) -> MetaCommandResult {
-    if input_buffer.get_buffer() == ".exit" {
-        exit(0);
-    } else {
-        MetaCommandResult::MetaCommandUnrecognizedCommands
+fn execute_meta_command(command: &MetaCommand) {
+    match command {
+        MetaCommand::Exit => std::process::exit(0)
     }
 }
 
-fn prepare_statement(input_buffer: &InputBuffer, statement: &mut Statement) -> PrepareResult {
-    match input_buffer.get_buffer() {
-        s if s.starts_with("insert") => {
-            statement.set_statement_type(StatementType::StatementInsert);
-            PrepareResult::PrepareSuccess
-        }
-        s if s.starts_with("select") => {
-            statement.set_statement_type(StatementType::StatementSelect);
-            PrepareResult::PrepareSuccess
-        }
-        _ => PrepareResult::PrepareUnrecognizedStatement,
+/// Statements
+enum Statement {
+    Insert,
+    Select,
+}
+
+fn prepare_statement(input: &str) -> Result<Statement, ()> {
+    match input {
+        s if s.starts_with("insert") => Ok(Statement::Insert),
+        s if s.starts_with("select") => Ok(Statement::Select),
+        _ => Err(()),
     }
 }
 
 fn execute_statement(statement: &Statement) {
-    match statement.get_statement_type() {
-        StatementType::StatementInsert => {
-            println!("Insert statement executed");
-        }
-        StatementType::StatementSelect => {
-            println!("Select statement executed");
-        }
-        StatementType::StatementNone => {
-            println!("No statement executed");
-        }
+    match statement {
+        Statement::Insert => println!("Insert statement executed"),
+        Statement::Select => println!("Select statement executed"),
     }
 }
 
 fn main() {
-    let mut input_buffer = InputBuffer::new();
+    let mut input_buffer = InputBuffer::default();
 
     loop {
         print_prompt();
         input_buffer.read_input();
+        let input = input_buffer.get_buffer();
 
-        if input_buffer.get_buffer().starts_with('.') {
-            match do_meta_command(&input_buffer) {
-                MetaCommandResult::MetaCommandSuccess => {
+        if input.starts_with('.') {
+            match parse_meta_command(input) {
+                Ok(command) => {
+                    execute_meta_command(&command);
                     continue;
                 }
-                MetaCommandResult::MetaCommandUnrecognizedCommands => {
-                    println!("Unrecognized command: {}", input_buffer.get_buffer())
+                Err(_) => {
+                    println!("Unrecognized command: {}", input);
+                    continue;
                 }
             }
         }
 
-        let mut statement = Statement::new();
-
-        match prepare_statement(&input_buffer, &mut statement) {
-            PrepareResult::PrepareSuccess => {}
-            PrepareResult::PrepareUnrecognizedStatement => {
-                println!(
-                    "Unrecognized statement at start of: {}",
-                    input_buffer.get_buffer()
-                )
+        match prepare_statement(input) {
+            Ok(statement) => {
+                execute_statement(&statement);
+                println!("Executed");
+            }
+            Err(_) => {
+                println!("Unrecognized statement at start of: {}", input);
             }
         }
-
-        execute_statement(&statement);
-        println!("Executed");
     }
 }
