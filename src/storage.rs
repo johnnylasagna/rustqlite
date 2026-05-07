@@ -1,3 +1,4 @@
+use crate::btree::initialize_leaf_node;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 
@@ -11,10 +12,8 @@ const ID_OFFSET: usize = 0;
 const USERNAME_OFFSET: usize = ID_OFFSET + ID_SIZE;
 const EMAIL_OFFSET: usize = USERNAME_OFFSET + USERNAME_SIZE;
 
-const PAGE_SIZE: usize = 4096;
+pub const PAGE_SIZE: usize = 4096;
 pub const TABLE_MAX_PAGES: usize = 100;
-pub const ROWS_PER_PAGE: usize = PAGE_SIZE / ROW_SIZE;
-pub const TABLE_MAX_ROWS: usize = ROWS_PER_PAGE * TABLE_MAX_PAGES;
 
 /// Row
 pub struct Row {
@@ -66,6 +65,7 @@ impl Row {
 pub struct Pager {
     file: File,
     pub file_size: usize,
+    pub num_pages: usize,
     pages: [Option<Box<[u8; PAGE_SIZE]>>; TABLE_MAX_PAGES],
 }
 
@@ -85,9 +85,17 @@ impl Pager {
 
         const EMPTY_PAGE: Option<Box<[u8; PAGE_SIZE]>> = None;
 
+        let num_pages = file_size / PAGE_SIZE;
+
+        if file_size % PAGE_SIZE != 0 {
+            println!("Db file is not a whole number of pages. Corrupt file");
+            std::process::exit(1);
+        }
+
         Pager {
             file,
             file_size,
+            num_pages,
             pages: [EMPTY_PAGE; TABLE_MAX_PAGES],
         }
     }
@@ -100,27 +108,20 @@ impl Pager {
         if self.pages[page_num].is_none() {
             let mut page = Box::new([0; PAGE_SIZE]);
 
-            let mut num_pages = self.file_size / PAGE_SIZE;
-            if self.file_size % PAGE_SIZE > 0 {
-                num_pages += 1;
-            }
-
-            if page_num < num_pages {
-                let bytes_to_read = if page_num == num_pages - 1 && self.file_size % PAGE_SIZE > 0 {
-                    self.file_size % PAGE_SIZE
-                } else {
-                    PAGE_SIZE
-                };
-
+            if page_num < self.num_pages {
                 self.file
                     .seek(SeekFrom::Start((page_num * PAGE_SIZE) as u64))
                     .map_err(|_| "Failed to seek file")?;
                 self.file
-                    .read_exact(&mut page[..bytes_to_read])
+                    .read_exact(page.as_mut_slice())
                     .map_err(|_| "Failed to read file")?;
             }
 
             self.pages[page_num] = Some(page);
+        }
+
+        if page_num >= self.num_pages {
+            self.num_pages = page_num + 1;
         }
 
         if let Some(page) = self.pages[page_num].as_mut() {
@@ -130,14 +131,14 @@ impl Pager {
         }
     }
 
-    pub fn flush(&mut self, page_num: usize, size: usize) -> Result<(), &'static str> {
+    pub fn flush(&mut self, page_num: usize) -> Result<(), &'static str> {
         if let Some(page) = &self.pages[page_num] {
             self.file
                 .seek(SeekFrom::Start((page_num * PAGE_SIZE) as u64))
                 .map_err(|_| "Failed to seek file")?;
 
             self.file
-                .write_all(&page[..size])
+                .write_all(&page[..PAGE_SIZE])
                 .map_err(|_| "Failed to write to file")?;
 
             Ok(())
@@ -149,77 +150,33 @@ impl Pager {
 
 /// Table
 pub struct Table {
-    pub num_rows: usize,
-    pager: Pager,
+    pub root_page_num: usize,
+    pub pager: Pager,
 }
 
 impl Table {
     pub fn new(filename: &str) -> Table {
-        let pager = Pager::new(filename);
-        let num_rows = pager.file_size / ROW_SIZE;
-        Table { num_rows, pager }
+        let mut pager = Pager::new(filename);
+        let root_page_num = 0;
+
+        if pager.num_pages == 0 {
+            let root_node = pager.get_page(0).expect("Failed to init root page");
+            initialize_leaf_node(root_node);
+        }
+
+        Table {
+            root_page_num,
+            pager,
+        }
     }
 
     pub fn close(&mut self) -> Result<(), &'static str> {
-        let num_full_pages = self.num_rows / ROWS_PER_PAGE;
-
-        for i in 0..num_full_pages {
+        for i in 0..self.pager.num_pages {
             if self.pager.pages[i].is_some() {
-                self.pager.flush(i, PAGE_SIZE)?;
-            }
-        }
-
-        let num_additional_rows = self.num_rows % ROWS_PER_PAGE;
-        if num_additional_rows > 0 {
-            let page_num = num_full_pages;
-            if self.pager.pages[page_num].is_some() {
-                self.pager.flush(page_num, num_additional_rows * ROW_SIZE)?;
+                self.pager.flush(i)?;
             }
         }
 
         Ok(())
-    }
-}
-
-/// Cursor
-pub struct Cursor<'a> {
-    table: &'a mut Table,
-    pub row_num: usize,
-    pub end_of_table: bool,
-}
-
-impl<'a> Cursor<'a> {
-    pub fn start(table: &'a mut Table) -> Cursor<'a> {
-        let end_of_table = table.num_rows == 0;
-        Cursor {
-            table,
-            row_num: 0,
-            end_of_table,
-        }
-    }
-
-    pub fn end(table: &'a mut Table) -> Cursor<'a> {
-        let row_num = table.num_rows;
-        Cursor {
-            table,
-            row_num,
-            end_of_table: true,
-        }
-    }
-
-    pub fn value(&mut self) -> Result<&mut [u8], &'static str> {
-        let page_num = self.row_num / ROWS_PER_PAGE;
-        let row_offset = self.row_num % ROWS_PER_PAGE;
-        let byte_offset = row_offset * ROW_SIZE;
-
-        let page = self.table.pager.get_page(page_num)?;
-        Ok(&mut page[byte_offset..byte_offset + ROW_SIZE])
-    }
-
-    pub fn advance(&mut self) {
-        self.row_num += 1;
-        if self.row_num >= self.table.num_rows {
-            self.end_of_table = true;
-        }
     }
 }

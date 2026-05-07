@@ -3,6 +3,7 @@ use std::env;
 mod repl;
 mod statement;
 mod storage;
+mod btree;
 
 // Import the items we need into scope
 use repl::{InputBuffer, execute_meta_command, parse_meta_command, print_prompt};

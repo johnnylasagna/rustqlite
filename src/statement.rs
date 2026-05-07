@@ -1,4 +1,5 @@
-use crate::storage::{EMAIL_SIZE, Row, TABLE_MAX_ROWS, Table, USERNAME_SIZE, Cursor};
+use crate::storage::{EMAIL_SIZE, Row, Table, USERNAME_SIZE};
+use crate::btree::{leaf_node_insert, Cursor};
 
 /// Statements
 pub enum Statement {
@@ -44,17 +45,10 @@ pub fn execute_statement(
 }
 
 fn execute_insert(statement: &Statement, table: &mut Table) -> Result<&'static str, &'static str> {
-    if table.num_rows >= TABLE_MAX_ROWS {
-        return Err("Table Full");
-    }
-
+    
     if let Statement::Insert(row) = statement {
-        // {
-        let mut cursor = Cursor::end(table);
-        let slot = cursor.value()?;
-        row.serialize(slot);
-        // }
-        table.num_rows += 1;
+        let mut cursor = Cursor::end(table)?;
+        leaf_node_insert(&mut cursor, row.id as u32, row)?;
     }
 
     Ok("Insert statement executed")
@@ -62,7 +56,7 @@ fn execute_insert(statement: &Statement, table: &mut Table) -> Result<&'static s
 
 fn execute_select(table: &mut Table) -> Result<&'static str, &'static str> {
 
-    let mut cursor = Cursor::start(table);
+    let mut cursor = Cursor::start(table)?;
 
     while !cursor.end_of_table {
         let slot = cursor.value()?;
@@ -78,7 +72,7 @@ fn execute_select(table: &mut Table) -> Result<&'static str, &'static str> {
             email_str.trim_end_matches('\0')
         );
 
-        cursor.advance();
+        cursor.advance()?;
     }
 
     Ok("Select statement executed")
