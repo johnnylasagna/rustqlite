@@ -1,4 +1,4 @@
-use crate::btree::initialize_leaf_node;
+use crate::btree::{initialize_leaf_node, set_node_root};
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 
@@ -118,10 +118,10 @@ impl Pager {
             }
 
             self.pages[page_num] = Some(page);
-        }
 
-        if page_num >= self.num_pages {
-            self.num_pages = page_num + 1;
+            if page_num >= self.num_pages {
+                self.num_pages = page_num + 1;
+            }
         }
 
         if let Some(page) = self.pages[page_num].as_mut() {
@@ -129,6 +129,10 @@ impl Pager {
         } else {
             Err("Page is empty")
         }
+    }
+
+    pub fn get_unused_page_number(&self) -> usize {
+        self.num_pages
     }
 
     pub fn flush(&mut self, page_num: usize) -> Result<(), &'static str> {
@@ -162,6 +166,7 @@ impl Table {
         if pager.num_pages == 0 {
             let root_node = pager.get_page(0).expect("Failed to init root page");
             initialize_leaf_node(root_node);
+            set_node_root(root_node, true);
         }
 
         Table {

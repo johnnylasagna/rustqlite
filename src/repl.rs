@@ -1,3 +1,4 @@
+use crate::btree::{print_constants, print_leaf_node};
 use crate::storage::Table;
 use std::io::{self, Write};
 
@@ -30,11 +31,15 @@ pub fn print_prompt() {
 /// Commands
 pub enum MetaCommand {
     Exit,
+    Constants,
+    BTree,
 }
 
 pub fn parse_meta_command(input: &str) -> Result<MetaCommand, ()> {
     match input {
         ".exit" => Ok(MetaCommand::Exit),
+        ".constants" => Ok(MetaCommand::Constants),
+        ".btree" => Ok(MetaCommand::BTree),
         _ => Err(()),
     }
 }
@@ -46,6 +51,17 @@ pub fn execute_meta_command(command: &MetaCommand, table: &mut Table) {
                 println!("Error closing table: {}", e);
             }
             std::process::exit(0)
+        }
+        MetaCommand::Constants => {
+            println!("Constants:");
+            print_constants();
+        }
+        MetaCommand::BTree => {
+            println!("BTree:");
+            match table.pager.get_page(0) {
+                Ok(node) => print_leaf_node(node),
+                Err(e) => println!("Error reading root node: {}", e),
+            }
         }
     }
 }

@@ -1,9 +1,11 @@
+#![allow(dead_code)]
+
 use std::env;
 
+mod btree;
 mod repl;
 mod statement;
 mod storage;
-mod btree;
 
 // Import the items we need into scope
 use repl::{InputBuffer, execute_meta_command, parse_meta_command, print_prompt};
@@ -51,7 +53,10 @@ fn main() {
 
         match execute_statement(&statement, &mut table) {
             Ok(_) => println!("Executed."),
-            Err(_) => println!("Error: Table full."),
+            Err(e) => {
+                println!("Error: {}", e);
+                continue;
+            }
         }
     }
 }

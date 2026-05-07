@@ -1,5 +1,5 @@
+use crate::btree::{Cursor, leaf_node_insert};
 use crate::storage::{EMAIL_SIZE, Row, Table, USERNAME_SIZE};
-use crate::btree::{leaf_node_insert, Cursor};
 
 /// Statements
 pub enum Statement {
@@ -45,9 +45,9 @@ pub fn execute_statement(
 }
 
 fn execute_insert(statement: &Statement, table: &mut Table) -> Result<&'static str, &'static str> {
-    
     if let Statement::Insert(row) = statement {
-        let mut cursor = Cursor::end(table)?;
+        let key_to_insert = row.id;
+        let mut cursor = Cursor::find(table, key_to_insert)?;
         leaf_node_insert(&mut cursor, row.id as u32, row)?;
     }
 
@@ -55,7 +55,6 @@ fn execute_insert(statement: &Statement, table: &mut Table) -> Result<&'static s
 }
 
 fn execute_select(table: &mut Table) -> Result<&'static str, &'static str> {
-
     let mut cursor = Cursor::start(table)?;
 
     while !cursor.end_of_table {
