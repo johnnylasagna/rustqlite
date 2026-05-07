@@ -27,81 +27,38 @@ impl Row {
     pub fn new(id: u32, username: &str, email: &str) -> Row {
         let mut username_buffer = [0; USERNAME_SIZE];
         username_buffer[..username.len()].copy_from_slice(username.as_bytes());
-
+        
         let mut email_buffer = [0; EMAIL_SIZE];
         email_buffer[..email.len()].copy_from_slice(email.as_bytes());
-
+        
         Row {
             id,
             username: username_buffer,
             email: email_buffer,
         }
     }
-
+    
     pub fn serialize(&self, buffer: &mut [u8]) {
         buffer[ID_OFFSET..ID_OFFSET + ID_SIZE].copy_from_slice(&self.id.to_le_bytes());
         buffer[USERNAME_OFFSET..USERNAME_OFFSET + USERNAME_SIZE].copy_from_slice(&self.username);
         buffer[EMAIL_OFFSET..EMAIL_OFFSET + EMAIL_SIZE].copy_from_slice(&self.email);
     }
-
+    
     pub fn deserialize(buffer: &[u8]) -> Row {
         let mut id = [0u8; ID_SIZE];
         id.copy_from_slice(&buffer[ID_OFFSET..ID_OFFSET + ID_SIZE]);
-
+        
         let mut username = [0u8; USERNAME_SIZE];
         username.copy_from_slice(&buffer[USERNAME_OFFSET..USERNAME_OFFSET + USERNAME_SIZE]);
-
+        
         let mut email = [0u8; EMAIL_SIZE];
         email.copy_from_slice(&buffer[EMAIL_OFFSET..EMAIL_OFFSET + EMAIL_SIZE]);
-
+        
         Row {
             id: u32::from_le_bytes(id),
             username,
             email,
         }
-    }
-}
-
-/// Table
-pub struct Table {
-    pub num_rows: usize,
-    pager: Pager,
-}
-
-impl Table {
-    pub fn new(filename: &str) -> Table {
-        let pager = Pager::new(filename);
-        let num_rows = pager.file_size / ROW_SIZE;
-        Table { num_rows, pager }
-    }
-
-    pub fn row_slot(&mut self, row_num: usize) -> Result<&mut [u8], &'static str> {
-        let page_num = row_num / ROWS_PER_PAGE;
-        let row_offset = row_num % ROWS_PER_PAGE;
-        let byte_offset = row_offset * ROW_SIZE;
-
-        let page = self.pager.get_page(page_num)?;
-        Ok(&mut page[byte_offset..byte_offset + ROW_SIZE])
-    }
-
-    pub fn close(&mut self) -> Result<(), &'static str> {
-        let num_full_pages = self.num_rows / ROWS_PER_PAGE;
-
-        for i in 0..num_full_pages {
-            if self.pager.pages[i].is_some() {
-                self.pager.flush(i, PAGE_SIZE)?;
-            }
-        }
-
-        let num_additional_rows = self.num_rows % ROWS_PER_PAGE;
-        if num_additional_rows > 0 {
-            let page_num = num_full_pages;
-            if self.pager.pages[page_num].is_some() {
-                self.pager.flush(page_num, num_additional_rows * ROW_SIZE)?;
-            }
-        }
-
-        Ok(())
     }
 }
 
@@ -189,3 +146,49 @@ impl Pager {
         }
     }
 }
+
+/// Table
+pub struct Table {
+    pub num_rows: usize,
+    pager: Pager,
+}
+
+impl Table {
+    pub fn new(filename: &str) -> Table {
+        let pager = Pager::new(filename);
+        let num_rows = pager.file_size / ROW_SIZE;
+        Table { num_rows, pager }
+    }
+
+    pub fn row_slot(&mut self, row_num: usize) -> Result<&mut [u8], &'static str> {
+        let page_num = row_num / ROWS_PER_PAGE;
+        let row_offset = row_num % ROWS_PER_PAGE;
+        let byte_offset = row_offset * ROW_SIZE;
+
+        let page = self.pager.get_page(page_num)?;
+        Ok(&mut page[byte_offset..byte_offset + ROW_SIZE])
+    }
+
+    pub fn close(&mut self) -> Result<(), &'static str> {
+        let num_full_pages = self.num_rows / ROWS_PER_PAGE;
+
+        for i in 0..num_full_pages {
+            if self.pager.pages[i].is_some() {
+                self.pager.flush(i, PAGE_SIZE)?;
+            }
+        }
+
+        let num_additional_rows = self.num_rows % ROWS_PER_PAGE;
+        if num_additional_rows > 0 {
+            let page_num = num_full_pages;
+            if self.pager.pages[page_num].is_some() {
+                self.pager.flush(page_num, num_additional_rows * ROW_SIZE)?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+
+
