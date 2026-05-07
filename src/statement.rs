@@ -1,4 +1,4 @@
-use crate::storage::{EMAIL_SIZE, Row, TABLE_MAX_ROWS, Table, USERNAME_SIZE};
+use crate::storage::{EMAIL_SIZE, Row, TABLE_MAX_ROWS, Table, USERNAME_SIZE, Cursor};
 
 /// Statements
 pub enum Statement {
@@ -49,8 +49,11 @@ fn execute_insert(statement: &Statement, table: &mut Table) -> Result<&'static s
     }
 
     if let Statement::Insert(row) = statement {
-        let slot = table.row_slot(table.num_rows)?;
+        // {
+        let mut cursor = Cursor::end(table);
+        let slot = cursor.value()?;
         row.serialize(slot);
+        // }
         table.num_rows += 1;
     }
 
@@ -58,8 +61,11 @@ fn execute_insert(statement: &Statement, table: &mut Table) -> Result<&'static s
 }
 
 fn execute_select(table: &mut Table) -> Result<&'static str, &'static str> {
-    for i in 0..table.num_rows {
-        let slot = table.row_slot(i)?;
+
+    let mut cursor = Cursor::start(table);
+
+    while !cursor.end_of_table {
+        let slot = cursor.value()?;
         let row = Row::deserialize(slot);
 
         let username_str = String::from_utf8_lossy(&row.username);
@@ -71,6 +77,8 @@ fn execute_select(table: &mut Table) -> Result<&'static str, &'static str> {
             username_str.trim_end_matches('\0'),
             email_str.trim_end_matches('\0')
         );
+
+        cursor.advance();
     }
 
     Ok("Select statement executed")

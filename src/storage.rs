@@ -27,33 +27,33 @@ impl Row {
     pub fn new(id: u32, username: &str, email: &str) -> Row {
         let mut username_buffer = [0; USERNAME_SIZE];
         username_buffer[..username.len()].copy_from_slice(username.as_bytes());
-        
+
         let mut email_buffer = [0; EMAIL_SIZE];
         email_buffer[..email.len()].copy_from_slice(email.as_bytes());
-        
+
         Row {
             id,
             username: username_buffer,
             email: email_buffer,
         }
     }
-    
+
     pub fn serialize(&self, buffer: &mut [u8]) {
         buffer[ID_OFFSET..ID_OFFSET + ID_SIZE].copy_from_slice(&self.id.to_le_bytes());
         buffer[USERNAME_OFFSET..USERNAME_OFFSET + USERNAME_SIZE].copy_from_slice(&self.username);
         buffer[EMAIL_OFFSET..EMAIL_OFFSET + EMAIL_SIZE].copy_from_slice(&self.email);
     }
-    
+
     pub fn deserialize(buffer: &[u8]) -> Row {
         let mut id = [0u8; ID_SIZE];
         id.copy_from_slice(&buffer[ID_OFFSET..ID_OFFSET + ID_SIZE]);
-        
+
         let mut username = [0u8; USERNAME_SIZE];
         username.copy_from_slice(&buffer[USERNAME_OFFSET..USERNAME_OFFSET + USERNAME_SIZE]);
-        
+
         let mut email = [0u8; EMAIL_SIZE];
         email.copy_from_slice(&buffer[EMAIL_OFFSET..EMAIL_OFFSET + EMAIL_SIZE]);
-        
+
         Row {
             id: u32::from_le_bytes(id),
             username,
@@ -135,7 +135,7 @@ impl Pager {
             self.file
                 .seek(SeekFrom::Start((page_num * PAGE_SIZE) as u64))
                 .map_err(|_| "Failed to seek file")?;
-            
+
             self.file
                 .write_all(&page[..size])
                 .map_err(|_| "Failed to write to file")?;
@@ -160,15 +160,6 @@ impl Table {
         Table { num_rows, pager }
     }
 
-    pub fn row_slot(&mut self, row_num: usize) -> Result<&mut [u8], &'static str> {
-        let page_num = row_num / ROWS_PER_PAGE;
-        let row_offset = row_num % ROWS_PER_PAGE;
-        let byte_offset = row_offset * ROW_SIZE;
-
-        let page = self.pager.get_page(page_num)?;
-        Ok(&mut page[byte_offset..byte_offset + ROW_SIZE])
-    }
-
     pub fn close(&mut self) -> Result<(), &'static str> {
         let num_full_pages = self.num_rows / ROWS_PER_PAGE;
 
@@ -190,5 +181,45 @@ impl Table {
     }
 }
 
+/// Cursor
+pub struct Cursor<'a> {
+    table: &'a mut Table,
+    pub row_num: usize,
+    pub end_of_table: bool,
+}
 
+impl<'a> Cursor<'a> {
+    pub fn start(table: &'a mut Table) -> Cursor<'a> {
+        let end_of_table = table.num_rows == 0;
+        Cursor {
+            table,
+            row_num: 0,
+            end_of_table,
+        }
+    }
 
+    pub fn end(table: &'a mut Table) -> Cursor<'a> {
+        let row_num = table.num_rows;
+        Cursor {
+            table,
+            row_num,
+            end_of_table: true,
+        }
+    }
+
+    pub fn value(&mut self) -> Result<&mut [u8], &'static str> {
+        let page_num = self.row_num / ROWS_PER_PAGE;
+        let row_offset = self.row_num % ROWS_PER_PAGE;
+        let byte_offset = row_offset * ROW_SIZE;
+
+        let page = self.table.pager.get_page(page_num)?;
+        Ok(&mut page[byte_offset..byte_offset + ROW_SIZE])
+    }
+
+    pub fn advance(&mut self) {
+        self.row_num += 1;
+        if self.row_num >= self.table.num_rows {
+            self.end_of_table = true;
+        }
+    }
+}
